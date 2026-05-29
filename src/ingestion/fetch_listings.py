@@ -5,7 +5,21 @@ from dataclasses import dataclass
 import httpx
 from pydantic import BaseModel, ConfigDict
 
+import src.db.connection as db
 import src.utils as utils
+
+UPSERT_SQL = """
+    INSERT INTO raw_listings (
+        id, title, company, location, description,
+        salary_min, salary_max, created, redirect_url,
+        category, contract_type
+    ) VALUES %s
+    ON CONFLICT (id) DO UPDATE SET
+        title       = EXCLUDED.title,
+        company     = EXCLUDED.company,
+        description = EXCLUDED.description,
+        fetched_at  = NOW()
+"""
 
 ADZUNA_BASE_URL = "https://api.adzuna.com/v1/api/jobs"
 RESULTS_PER_PAGE = 50
@@ -127,6 +141,30 @@ def deduplicate(listings: list[AdzunaListing]) -> list[AdzunaListing]:
     return unique
 
 
+def _to_row(listing: AdzunaListing) -> tuple:
+    return (
+        listing.id,
+        listing.title,
+        listing.company.display_name if listing.company else None,
+        listing.location.display_name if listing.location else None,
+        listing.description,
+        listing.salary_min,
+        listing.salary_max,
+        listing.created,
+        listing.redirect_url,
+        listing.category.label if listing.category else None,
+        listing.contract_type,
+    )
+
+
+def load_raw(listings: list[AdzunaListing]) -> utils.Result[int]:
+    values = [_to_row(l) for l in listings]
+    count, err = db.upsert_many(UPSERT_SQL, values)
+    if err is not None:
+        return utils.err(err, "Failed to upsert raw listings")
+    return utils.ok(count)
+
+
 def main() -> None:
     from dotenv import load_dotenv
     load_dotenv()
@@ -149,13 +187,12 @@ def main() -> None:
     unique = deduplicate(all_listings)
     print(f"\nTotal unique listings: {len(unique)}")
 
-    # Print a sample so you can see what you got
-    print("\n--- Sample (first 3) ---")
-    for listing in unique[:3]:
-        print(f"  {listing.title} @ {listing.company.display_name if listing.company else 'N/A'}")
-        print(f"  {listing.location.display_name if listing.location else 'N/A'}")
-        print(f"  {listing.redirect_url}")
-        print()
+    count, err = load_raw(unique)
+    if err is not None:
+        print(f"Error loading to database: {err}")
+        return
+
+    print(f"Upserted {count} listings into raw_listings")
 
 
 if __name__ == "__main__":
