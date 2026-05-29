@@ -17,7 +17,7 @@ UPSERT_SQL = """
     ON CONFLICT (id) DO UPDATE SET
         title       = EXCLUDED.title,
         company     = EXCLUDED.company,
-        description = EXCLUDED.description,
+        description = COALESCE(EXCLUDED.description, raw_listings.description),
         fetched_at  = NOW()
 """
 
