@@ -1,5 +1,9 @@
+from datetime import datetime
+from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict
+
+import src.db.connection as db
 
 REMOTE_PATTERNS = frozenset({"remote", "work from home", "wfh", "fully remote", "hybrid remote"})
 
@@ -17,7 +21,7 @@ class CleanedRow(BaseModel):
     salary_max: float | None
     salary_midpoint: float | None
     is_remote: bool
-    created: str | None
+    created: datetime | None
     redirect_url: str | None
     category: str | None
     keywords_matched: list[str]
@@ -68,3 +72,48 @@ def clean_row(raw: dict) -> CleanedRow:
         category=raw.get("category"),
         keywords_matched=[],
     )
+
+
+def main() -> None:
+    load_dotenv()
+
+    rows, err = db.fetch_all("SELECT * FROM raw_listings")
+    if err:
+        print(f"Failed to fetch raw listings: {err}")
+        return
+
+    cleaned = [clean_row(r) for r in rows]
+
+    sql = """
+        INSERT INTO cleaned_listings (
+            id, title, company, location_raw, location_city, location_state,
+            description_clean, salary_min, salary_max, salary_midpoint,
+            is_remote, created, redirect_url, category, keywords_matched
+        ) VALUES %s
+        ON CONFLICT (id) DO UPDATE SET
+            title = EXCLUDED.title,
+            description_clean = EXCLUDED.description_clean,
+            is_remote = EXCLUDED.is_remote,
+            salary_midpoint = EXCLUDED.salary_midpoint,
+            cleaned_at = NOW()
+    """
+    values = [
+        (
+            r.id, r.title, r.company, r.location_raw, r.location_city,
+            r.location_state, r.description_clean, r.salary_min, r.salary_max,
+            r.salary_midpoint, r.is_remote, r.created, r.redirect_url,
+            r.category, r.keywords_matched,
+        )
+        for r in cleaned
+    ]
+
+    _, err = db.upsert_many(sql, values)
+    if err:
+        print(f"Failed to upsert cleaned listings: {err}")
+        return
+
+    print(f"Upserted {len(cleaned)} listings into cleaned_listings")
+
+
+if __name__ == "__main__":
+    main()
