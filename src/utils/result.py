@@ -5,7 +5,7 @@ def indent(string: str) -> str:
     return "\t" + string.replace("\n", "\n\t")
 
 
-type Result[T, E: Exception = Exception] = tuple[T, Never] | tuple[Never, E]
+type Result[T, E: Exception] = tuple[T, Never] | tuple[Never, E]
 
 
 def ok[T](value: T) -> tuple[T, Never]:

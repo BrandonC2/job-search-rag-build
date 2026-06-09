@@ -13,6 +13,8 @@ into a `raw_listings` table in Neon (serverless Postgres).
 **Prerequisites:** Python 3.12+, a [Neon](https://neon.tech) database (free tier works)
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 # fill in DATABASE_URL, ADZUNA_APP_ID, ADZUNA_APP_KEY
